@@ -18,17 +18,6 @@ class OzonConnector:
 				'Api-Key': self.key
 					}
 							)
-		# pprint(resp.json())
-		# list_of_actions = []
-		# for action in resp.json()['result']:
-		# 	list_of_actions.append(
-		# 		{'action_type': action['action_type'],
-        #           'date_end': action['date_end'],
-        #           'date_start': action['date_start'],
-        #           'id': action['id'],
-        #           'title': action['title'],
-		# 		  }
-		# 	)
 		return resp.json()['result']
 
 	def all_goods_for_action_get(self, action_id):
