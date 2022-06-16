@@ -57,7 +57,7 @@ class OzonConnector:
 			else:
 				return f'Unknown status ({int(str(resp)[-5:-2])})'
 
-	def all_goods_for_action_get(self, actions: list):
+	def goods_for_action_get(self, actions: list):
 		relation_goods_to_action = dict()
 		if actions is None:
 			return 'Empty request'
@@ -105,7 +105,7 @@ class OzonConnector:
 								timeout=self.request_params('/actions/candidates')[2]
 							).json()['result']['products']
 							offset += limit
-							relation_goods_to_action[action_id] = list_of_goods
+						relation_goods_to_action[action_id] = list_of_goods
 
 					elif int(str(resp)[-5:-2]) in errors_dict.keys():
 						relation_goods_to_action[action_id] = errors_dict[int(str(resp)[-5:-2])]
@@ -113,6 +113,25 @@ class OzonConnector:
 					else:
 						relation_goods_to_action[action_id] = f'Unknown status ({int(str(resp)[-5:-2])})'
 			return relation_goods_to_action
+
+	def actions_for_good_get(self, relation: dict):
+		list_of_products = []
+		for action, products in relation.items():
+			if type(products) == list:
+				for product in products:
+					product[f'{action}_discount_%'] = round(1 - product['max_action_price'] / product['price'], 2)
+				list_of_products += products
+			else:
+				continue
+		if len(list_of_products) != 0:
+			products_ids = list(set([unit['id'] for unit in list_of_products]))
+			products_dict = dict.fromkeys(products_ids, {})
+			for product in list_of_products:
+				if product['id'] in products_dict.keys():
+					products_dict[product['id']].update(product)
+			return products_dict
+		else:
+			return 'Empty list'
 
 	def conditions_for_actions_get(self):
 		pass
@@ -148,5 +167,9 @@ class OzonConnector:
 Client_Id = ''
 Api_Key = ''
 OC = OzonConnector(Client_Id, Api_Key)
-pprint(OC.all_goods_for_action_get(OC.all_actions_get()[0]))
 
+# pprint(OC.all_actions_get())
+# pprint(OC.actions_for_good_get(OC.all_actions_get()[0]))
+# pprint(OC.goods_for_action_get(OC.all_actions_get()[0]))
+# print('----------------')
+pprint(OC.actions_for_good_get(OC.goods_for_action_get(OC.all_actions_get()[0])))
