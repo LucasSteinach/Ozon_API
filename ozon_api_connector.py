@@ -119,7 +119,7 @@ class OzonConnector:
 		for action, products in relation.items():
 			if type(products) == list:
 				for product in products:
-					product[f'{action}_discount_%'] = round(1 - product['max_action_price'] / product['price'], 2)
+					product[f'{action}_discount_%'] = round(100 * (1 - product['max_action_price'] / product['price']), 0)
 				list_of_products += products
 			else:
 				continue
@@ -133,43 +133,85 @@ class OzonConnector:
 		else:
 			return 'Empty list'
 
-	def conditions_for_actions_get(self):
-		pass
+	# added list of products(with action price) to one action
+	def goods_to_action_add(self, action_id, products):
+		if type(action_id) != int:
+			return 'Incorrect action_id'
+		elif type(products) != list:
+			return '"Products" type must be list of dicts'
+		else:
+			for product in products:
+				resp = None
+				attempt_count = 1
+				while resp is None and attempt_count < 10:
+					try:
+						resp = requests.post(
+							self.request_params('/actions/products/activate')[0],
+							headers=self.request_params('/actions/products/activate')[1],
+							json={
+								'action_id': action_id,
+								'products': [{'product_id': product['id'],
+								    'action_price': product['max_action_price'],
+								    'stock': product['stock']
+								}]
+							},
+							timeout=self.request_params('/actions/products/activate')[2]
+						)
+					except requests.Timeout:
+						print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
+						time.sleep(4)
+					except requests.codes == 429:
+						print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
+						time.sleep(4)
+					attempt_count += 1
+				return resp.json()
 
-	def goods_to_action_add(self, action_id, product_id, action_price):
-		resp = requests.post(
-			self.request_params('/actions/products/activate')[0],
-			headers=self.request_params('/actions/products/activate')[1],
-			json={
-				'action_id': action_id,
-				'products': {
-					'action_price': action_price,
-					'product_id': product_id
-				}
-			}
-		)
-		return resp.json()
-
-	def goods_from_action_remove(self, action_id, product_id):
+	def goods_from_action_remove(self, action_id, product_id: list):
 		resp = requests.post(
 			self.request_params('/actions/products/deactivate')[0],
 			headers=self.request_params('/actions/products/deactivate')[1],
 			json={
 				'action_id': action_id,
-				'product_ids': [
-					product_id
-				]
+				'product_ids': product_id
 			}
 		)
-		return 'Done'
+		return resp.json()
 
 
 Client_Id = ''
 Api_Key = ''
 OC = OzonConnector(Client_Id, Api_Key)
 
-# pprint(OC.all_actions_get())
-# pprint(OC.actions_for_good_get(OC.all_actions_get()[0]))
-# pprint(OC.goods_for_action_get(OC.all_actions_get()[0]))
-# print('----------------')
-pprint(OC.actions_for_good_get(OC.goods_for_action_get(OC.all_actions_get()[0])))
+test_added_products = [{'404776_discount_%': 13.0,
+	'action_price': 0,
+	'add_mode': 'NOT_SET',
+	'id': 7346816,
+	'max_action_price': 722.1,
+	'min_stock': 0,
+	'price': 830,
+	'stock': 0
+	},
+	{'404776_discount_%': 13.0,
+	'action_price': 0,
+	'add_mode': 'NOT_SET',
+	'id': 7346818,
+	'max_action_price': 722.1,
+	'min_stock': 0,
+	'price': 830,
+	'stock': 0
+	}
+]
+
+test_deleted_products = [7346816, 7346818]
+test_action = 404776
+current_actions = OC.all_actions_get()
+goods_for_action = OC.goods_for_action_get(current_actions[0])
+actions_for_good = OC.actions_for_good_get(goods_for_action)
+print('--------------')
+pprint(goods_for_action)
+print('----------------')
+# pprint(actions_for_good)
+# print('-------------\n\n\n\n------------------')
+# pprint(OC.goods_to_action_add(test_action, test_added_products))
+print('-------------\n\n\n\n------------------')
+pprint(OC.goods_from_action_remove(test_action, test_deleted_products))
