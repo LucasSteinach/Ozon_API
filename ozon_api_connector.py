@@ -2,6 +2,8 @@ from pprint import pprint
 
 import requests
 
+import pandas as pd
+
 import time
 
 errors_dict = {
@@ -47,15 +49,15 @@ class OzonConnector:
         if resp is None:
             return None
         else:
-            if int(str(resp)[-5:-2]) == 200:
+            if resp.status_code == 200:
                 list_of_ids = []
                 for action in resp.json()['result']:
                     list_of_ids.append(action['id'])
                 return list_of_ids, resp.json()['result']
-            elif int(str(resp)[-5:-2]) in errors_dict.keys():
-                return errors_dict[int(str(resp)[-5:-2])]
+            elif resp.status_code in errors_dict.keys():
+                return errors_dict[resp.status_code]
             else:
-                return f'Unknown status ({int(str(resp)[-5:-2])})'
+                return f'Unknown status ({resp.status_code})'
 
     def goods_for_action_get(self, actions: list):
         relation_goods_to_action = dict()
@@ -88,7 +90,7 @@ class OzonConnector:
                 if resp is None:
                     relation_goods_to_action[action_id] = 'NOT RESPONSE (Timeout or 429)'
                 else:
-                    if int(str(resp)[-5:-2]) == 200:
+                    if resp.status_code == 200:
                         total_goods = resp.json()['result']['total']
                         limit = 100
                         offset = 0
@@ -105,13 +107,26 @@ class OzonConnector:
                                 timeout=self.request_params('/actions/candidates')[2]
                             ).json()['result']['products']
                             offset += limit
-                        relation_goods_to_action[action_id] = list_of_goods
+                        flat_unit = dict()
+                        final_df = pd.DataFrame()
+                        for product in list_of_goods:
+                            flat_unit['id_action'] = action_id
+                            flat_unit['id_product'] = product['id']
+                            flat_unit['price'] = product['price']
+                            flat_unit['action_price'] = product['action_price']
+                            flat_unit['max_action_price'] = product['max_action_price']
+                            flat_unit['add_mode'] = product['add_mode']
+                            flat_unit['stock'] = product['stock']
+                            flat_unit['min_stock'] = product['min_stock']
+                            df_unit = pd.DataFrame(flat_unit, index=[0])
+                            final_df = pd.concat([df_unit, final_df])
+                        relation_goods_to_action[action_id] = final_df
 
-                    elif int(str(resp)[-5:-2]) in errors_dict.keys():
-                        relation_goods_to_action[action_id] = errors_dict[int(str(resp)[-5:-2])]
+                    elif resp.status_code in errors_dict.keys():
+                        relation_goods_to_action[action_id] = errors_dict[resp.status_code]
 
                     else:
-                        relation_goods_to_action[action_id] = f'Unknown status ({int(str(resp)[-5:-2])})'
+                        relation_goods_to_action[action_id] = f'Unknown status ({resp.status_code})'
             return relation_goods_to_action
 
     def actions_for_good_get(self, relation: dict):
@@ -166,7 +181,7 @@ class OzonConnector:
             if resp is None:
                 result.update({'error': 'NOT RESPONSE (Timeout or 429)'})
             else:
-                if int(str(resp)[-5:-2]) == 200:
+                if resp.status_code == 200:
                     total_goods = resp.json()['result']['total']
                     limit = 100
                     offset = 0
@@ -185,7 +200,6 @@ class OzonConnector:
                         offset += limit
                     result = {action_id: list_of_products}
         return result
-
 
     # added list of products(with action price) to one action
     def goods_to_action_add(self, action_id, products):
@@ -256,7 +270,6 @@ class OzonConnector:
                         else:
                             result.update({product_id: [action_id]})
             return result
-
 
     def goods_from_action_remove(self, action_id, product_id: list):
         resp = requests.post(
