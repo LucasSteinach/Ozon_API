@@ -1,5 +1,7 @@
 from pprint import pprint
 
+import psycopg2 as psy
+
 import requests
 
 import pandas as pd
@@ -14,6 +16,48 @@ errors_dict = {
     429: "Too many requests"
 }
 
+sql_fields = [
+    'id_action',
+    'id_product',
+    'price',
+    'action_price',
+    'max_action_price',
+    'add_mode',
+    'stock',
+    'min_stock',
+    'date_end'
+]
+
+sql_insertion = f"""
+    INSERT INTO \\db\\({sql_fields})
+    VALUES """
+
+
+def sql_connection(db_name, db_user, db_password, db_host, db_port):
+    connection = None
+    try:
+        connection = psy.connect(
+            database=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port
+        )
+        print("Connection to PostgreSQL DB successful")
+    except psy.OperationalError as error:
+        print(f"The error '{error}' occurred")
+    return connection
+
+
+def sql_execution(connection, query):
+    connection.autocommit = True
+    cursor = connection.cursor()
+    try:
+        cursor.execute(query)
+        print('Query executed successfully')
+    except OperationalError as error:
+        print(f"The error '{error}' has occured")
+
 
 class OzonConnector:
 
@@ -21,6 +65,7 @@ class OzonConnector:
         self.id = client_id
         self.key = api_key
         self.http = 'https://api-seller.ozon.ru/v1'
+        self.db_list = []
 
     def request_params(self, href_end):
         return f'{self.http}{href_end}', {
@@ -50,21 +95,21 @@ class OzonConnector:
             return None
         else:
             if resp.status_code == 200:
-                list_of_ids = []
+                dict_of_ids = dict()
                 for action in resp.json()['result']:
-                    list_of_ids.append(action['id'])
-                return list_of_ids, resp.json()['result']
+                    dict_of_ids[action['id']] = action['date_end']
+                return dict_of_ids, resp.json()['result']
             elif resp.status_code in errors_dict.keys():
                 return errors_dict[resp.status_code]
             else:
                 return f'Unknown status ({resp.status_code})'
 
-    def goods_for_action_get(self, actions: list):
+    def goods_for_action_get(self, actions: dict):
         relation_goods_to_action = dict()
         if actions is None:
             return 'Empty request'
         else:
-            for action_id in actions:
+            for action_id, end_date in actions.items():
                 resp = None
                 attempt_count = 1
                 while resp is None and attempt_count < 10:
@@ -91,6 +136,7 @@ class OzonConnector:
                     relation_goods_to_action[action_id] = 'NOT RESPONSE (Timeout or 429)'
                 else:
                     if resp.status_code == 200:
+                        connection = sql_connection('db', 'user', 'password', 'host', 'port')
                         total_goods = resp.json()['result']['total']
                         limit = 100
                         offset = 0
@@ -118,8 +164,12 @@ class OzonConnector:
                             flat_unit['add_mode'] = product['add_mode']
                             flat_unit['stock'] = product['stock']
                             flat_unit['min_stock'] = product['min_stock']
+                            flat_unit['date_end'] = end_date
                             df_unit = pd.DataFrame(flat_unit, index=[0])
                             final_df = pd.concat([df_unit, final_df])
+                            if len(final_df) > 10000:
+                                sql_execution(connection, sql_insertion + final_df)
+                                final_df = pd.DataFrame()
                         relation_goods_to_action[action_id] = final_df
 
                     elif resp.status_code in errors_dict.keys():
@@ -322,6 +372,8 @@ actions_for_good = OC.actions_for_good_get(goods_for_action)
 # print('------------------\n\n\n\n------------------')
 # pprint(OC.goods_from_action_remove(408548, [7223549]))
 # print('------------------\n\n\n\n------------------')
-pprint(OC.active_products(408548))
+# pprint(OC.active_products(408548))
 # print('------------------\n\n\n\n------------------')
-pprint(OC.log_of_active_products())
+# pprint(OC.log_of_active_products())
+
+
