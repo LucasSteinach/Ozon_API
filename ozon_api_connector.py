@@ -25,20 +25,34 @@ sql_fields = [
     'add_mode',
     'stock',
     'min_stock',
-    'date_end'
+    'date_end',
+    'client_id_api'
 ]
 
 sql_insertion = f"""
     INSERT INTO \\db\\({sql_fields})
     VALUES """
 
-sql_selection = f"""
-    SELECT * FROM table_name
-"""
 
 sql_my_auth_data = (
-
+    # db_name: str,
+    # db_user: str,
+    # db_password: str,
+    # db_host: str,
+    # db_port: str,
+    # target_session_attrs: str,
+    # sslmode: str
 )
+
+sql_select_api_clients = """
+    SELECT MAX(id), client_id_api, tmp.api_key
+    FROM (SELECT DISTINCT(api_key) from account_list) as tmp
+    JOIN account_list
+    ON tmp.api_key = account_list.api_key
+    WHERE mp_id = 1
+    GROUP BY tmp.api_key, client_id_api
+    ORDER BY api_key
+"""
 
 
 def sql_connection(db_name, db_user, db_password, db_host, db_port, target_session_attrs, sslmode):
@@ -59,14 +73,21 @@ def sql_connection(db_name, db_user, db_password, db_host, db_port, target_sessi
     return connection
 
 
-def sql_execution(connection, query):
-    connection.autocommit = True
-    cursor = connection.cursor()
-    try:
-        cursor.execute(query)
-        print('Query executed successfully')
-    except psy.OperationalError as error:
-        print(f"The error '{error}' has occured")
+def insert_data(f_values_data, colum_data, connection, table_name):
+    if f_values_data != '':
+    insert_query = f"insert into {table_name} ({colum_data}) values {f_values_data}"
+    pointer = connection.cursor()
+    pointer.execute(insert_query)
+    conn.commit()
+    print(f"record in {table_name} created")
+
+
+def delete_data():
+    pass
+
+
+def join_data():
+    pass
 
 
 class OzonConnector:
@@ -114,10 +135,12 @@ class OzonConnector:
             else:
                 return f'Unknown status ({resp.status_code})'
 
-    def goods_for_action_get(self, actions: dict):
+    def goods_for_action_get(self, actions: dict, connection):
         relation_goods_to_action = dict()
         if actions is None:
             return 'Empty request'
+        elif type(actions) is not dict:
+            return f'Incorrect type of "actions" (type: {type(actions)}, value:{actions})'
         else:
             for action_id, end_date in actions.items():
                 resp = None
@@ -146,8 +169,6 @@ class OzonConnector:
                     relation_goods_to_action[action_id] = 'NOT RESPONSE (Timeout or 429)'
                 else:
                     if resp.status_code == 200:
-                        connection = sql_connection(*sql_my_auth_data)
-                        sql_execution(connection, sql_selection)
                         total_goods = resp.json()['result']['total']
                         limit = 100
                         offset = 0
@@ -176,14 +197,14 @@ class OzonConnector:
                             flat_unit['stock'] = product['stock']
                             flat_unit['min_stock'] = product['min_stock']
                             flat_unit['date_end'] = end_date
+                            flat_unit['client_id_api'] = self.id
                             df_unit = pd.DataFrame(flat_unit, index=[0])
                             final_df = pd.concat([df_unit, final_df])
                             if len(final_df) > 10000:
-                                # sql_execution(connection, sql_insertion + final_df)
+                                insert_data(final_df, sql_fields, connection, table_name)
                                 final_df = pd.DataFrame()
-                        # sql_execution(connection, sql_insertion + final_df)
-                        final_df = pd.DataFrame()
-                        relation_goods_to_action[action_id] = final_df
+                        insert_data(final_df, sql_fields, connection, table_name)
+                        relation_goods_to_action[action_id] = 'success'
 
                     elif resp.status_code in errors_dict.keys():
                         relation_goods_to_action[action_id] = errors_dict[resp.status_code]
@@ -192,26 +213,6 @@ class OzonConnector:
                         relation_goods_to_action[action_id] = f'Unknown status ({resp.status_code})'
             return relation_goods_to_action
 
-    def actions_for_good_get(self, relation: dict):
-        list_of_products = []
-        temp = dict(relation)
-        for action, products in temp.items():
-            if type(products) == list:
-                for product in products:
-                    product[f'{action}_discount_%'] = round(100 * (1 - product['max_action_price'] / product['price']),
-                                                            0)
-                list_of_products += products
-            else:
-                continue
-        if len(list_of_products) != 0:
-            products_ids = list(set([unit['id'] for unit in list_of_products]))
-            products_dict = dict.fromkeys(products_ids, {})
-            for product in list_of_products:
-                if product['id'] in products_dict.keys():
-                    products_dict[product['id']].update(product)
-            return products_dict
-        else:
-            return 'Empty list'
 
     # creates dict {id_action: list_of_products related to this action}
     def active_products(self, action_id):
@@ -346,47 +347,19 @@ class OzonConnector:
         return resp.json()
 
 
+conn = sql_connection(*sql_my_auth_data)
+pointer = conn.cursor()
+pointer.execute(sql_select_api_clients)
+records = pointer.fetchall()
+pprint(records)
+print('-' * 28 + '\n\n\n\n' + '-' * 28)
+
+for max_id, client_id_api, api_key in records:
+    OC1 = OzonConnector(client_id_api, api_key)
+    pprint(OC1.goods_for_action_get(OC1.all_actions_get()[0], conn))
+    print('-' * 28 + '\n\n\n' + '-' * 28)
+
 Client_Id = ''
 Api_Key = ''
 OC = OzonConnector(Client_Id, Api_Key)
 
-test_added_products = [{'404776_discount_%': 13.0,
-                        'action_price': 0,
-                        'add_mode': 'NOT_SET',
-                        'id': 7346816,
-                        'max_action_price': 722.1,
-                        'min_stock': 0,
-                        'price': 830,
-                        'stock': 0
-                        },
-                       {'404776_discount_%': 13.0,
-                        'action_price': 0,
-                        'add_mode': 'NOT_SET',
-                        'id': 7346818,
-                        'max_action_price': 722.1,
-                        'min_stock': 0,
-                        'price': 830,
-                        'stock': 0
-                        }
-                       ]
-
-test_deleted_products = [7346816, 7346818]
-test_action = 404776
-current_actions = OC.all_actions_get()
-goods_for_action = OC.goods_for_action_get(current_actions[0])
-actions_for_good = OC.actions_for_good_get(goods_for_action)
-# print('------------------')
-# pprint(goods_for_action)
-# print('------------------')
-# pprint(actions_for_good)
-# print('------------------\n\n\n\n------------------')
-# pprint(OC.goods_to_action_add(408548, test_added_products))
-# OC.goods_to_action_add(test_action, test_added_products)
-# print('------------------\n\n\n\n------------------')
-# pprint(OC.goods_from_action_remove(408548, [7223549]))
-# print('------------------\n\n\n\n------------------')
-# pprint(OC.active_products(408548))
-# print('------------------\n\n\n\n------------------')
-# pprint(OC.log_of_active_products())
-
-print(type(sql_connection(*sql_my_auth_data)))
