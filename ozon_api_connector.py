@@ -32,8 +32,16 @@ sql_insertion = f"""
     INSERT INTO \\db\\({sql_fields})
     VALUES """
 
+sql_selection = f"""
+    SELECT * FROM table_name
+"""
 
-def sql_connection(db_name, db_user, db_password, db_host, db_port):
+sql_my_auth_data = (
+
+)
+
+
+def sql_connection(db_name, db_user, db_password, db_host, db_port, target_session_attrs, sslmode):
     connection = None
     try:
         connection = psy.connect(
@@ -41,7 +49,9 @@ def sql_connection(db_name, db_user, db_password, db_host, db_port):
             user=db_user,
             password=db_password,
             host=db_host,
-            port=db_port
+            port=db_port,
+            target_session_attrs=target_session_attrs,
+            sslmode=sslmode
         )
         print("Connection to PostgreSQL DB successful")
     except psy.OperationalError as error:
@@ -55,7 +65,7 @@ def sql_execution(connection, query):
     try:
         cursor.execute(query)
         print('Query executed successfully')
-    except OperationalError as error:
+    except psy.OperationalError as error:
         print(f"The error '{error}' has occured")
 
 
@@ -136,7 +146,8 @@ class OzonConnector:
                     relation_goods_to_action[action_id] = 'NOT RESPONSE (Timeout or 429)'
                 else:
                     if resp.status_code == 200:
-                        connection = sql_connection('db', 'user', 'password', 'host', 'port')
+                        connection = sql_connection(*sql_my_auth_data)
+                        sql_execution(connection, sql_selection)
                         total_goods = resp.json()['result']['total']
                         limit = 100
                         offset = 0
@@ -168,8 +179,10 @@ class OzonConnector:
                             df_unit = pd.DataFrame(flat_unit, index=[0])
                             final_df = pd.concat([df_unit, final_df])
                             if len(final_df) > 10000:
-                                sql_execution(connection, sql_insertion + final_df)
+                                # sql_execution(connection, sql_insertion + final_df)
                                 final_df = pd.DataFrame()
+                        # sql_execution(connection, sql_insertion + final_df)
+                        final_df = pd.DataFrame()
                         relation_goods_to_action[action_id] = final_df
 
                     elif resp.status_code in errors_dict.keys():
@@ -376,4 +389,4 @@ actions_for_good = OC.actions_for_good_get(goods_for_action)
 # print('------------------\n\n\n\n------------------')
 # pprint(OC.log_of_active_products())
 
-
+print(type(sql_connection(*sql_my_auth_data)))
