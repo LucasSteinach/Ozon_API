@@ -75,11 +75,11 @@ def sql_connection(db_name, db_user, db_password, db_host, db_port, target_sessi
 
 def insert_data(f_values_data, colum_data, connection, table_name):
     if f_values_data != '':
-    insert_query = f"insert into {table_name} ({colum_data}) values {f_values_data}"
-    pointer = connection.cursor()
-    pointer.execute(insert_query)
-    conn.commit()
-    print(f"record in {table_name} created")
+        insert_query = f"insert into {table_name} ({colum_data}) values {f_values_data}"
+        pointer = connection.cursor()
+        pointer.execute(insert_query)
+        conn.commit()
+        print(f"record in {table_name} created")
 
 
 def delete_data():
