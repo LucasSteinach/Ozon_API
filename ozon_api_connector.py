@@ -51,7 +51,7 @@ sql_select_api_clients = """
     ON tmp.api_key = account_list.api_key
     WHERE mp_id = 1
     GROUP BY tmp.api_key, client_id_api
-    ORDER BY api_key
+    ORDER BY api_key DESC
 """
 
 
@@ -102,7 +102,7 @@ class OzonConnector:
         return f'{self.http}{href_end}', {
             'Client-Id': self.id,
             'Api-Key': self.key,
-        }, 4
+        }, 9
 
     def all_actions_get(self):
         resp = None
@@ -114,21 +114,24 @@ class OzonConnector:
                     headers=self.request_params('/actions')[1],
                     timeout=self.request_params('/actions')[2]
                 )
+
             except requests.Timeout:
-                print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
-                time.sleep(4)
+                print(f'Attempt #{attempt_count} failed(Timeout). Next attempt in {self.request_params("/actions")[2]} seconds')
+                time.sleep(self.request_params('/actions')[2] * attempt_count)
             except requests.codes == 429:
-                print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
-                time.sleep(4)
+                print(f'Attempt #{attempt_count} failed(429). Next attempt in {self.request_params("/actions")[2]} seconds')
+                time.sleep(self.request_params('/actions')[2] * attempt_count)
             attempt_count += 1
 
-        if resp is None:
-            return None
+        dict_of_ids = dict()
+        if resp.status_code != 200:
+            return dict_of_ids, resp.status_code
         else:
             if resp.status_code == 200:
-                dict_of_ids = dict()
+                print('successful actions request')
                 for action in resp.json()['result']:
                     dict_of_ids[action['id']] = action['date_end']
+                print(len(dict_of_ids))
                 return dict_of_ids, resp.json()['result']
             elif resp.status_code in errors_dict.keys():
                 return errors_dict[resp.status_code]
@@ -139,8 +142,6 @@ class OzonConnector:
         relation_goods_to_action = dict()
         if actions is None:
             return 'Empty request'
-        elif type(actions) is not dict:
-            return f'Incorrect type of "actions" (type: {type(actions)}, value:{actions})'
         else:
             for action_id, end_date in actions.items():
                 resp = None
@@ -158,23 +159,25 @@ class OzonConnector:
                             timeout=self.request_params('/actions/candidates')[2]
                         )
                     except requests.Timeout:
-                        print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
-                        time.sleep(4)
+                        print(f'Attempt #{attempt_count} failed(Timeout). Next attempt in {self.request_params("/actions/candidates")[2]} seconds')
+                        time.sleep(self.request_params('/actions/candidates')[2] * attempt_count)
                     except requests.codes == 429:
-                        print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
-                        time.sleep(4)
+                        print(f'Attempt #{attempt_count} failed(429). Next attempt in {self.request_params("/actions/candidates")[2]} seconds')
+                        time.sleep(self.request_params('/actions/candidates')[2] * attempt_count)
                     attempt_count += 1
 
                 if resp is None:
                     relation_goods_to_action[action_id] = 'NOT RESPONSE (Timeout or 429)'
                 else:
                     if resp.status_code == 200:
+                        print(f'successful goods request (action {action_id})')
                         total_goods = resp.json()['result']['total']
                         limit = 100
                         offset = 0
                         list_of_goods = []
-                        while len(list_of_goods) < total_goods:
-                            list_of_goods += requests.post(
+                        final_df = pd.DataFrame()
+                        while offset < total_goods:
+                            list_of_goods = requests.post(
                                 self.request_params('/actions/candidates')[0],
                                 headers=self.request_params('/actions/candidates')[1],
                                 json={
@@ -185,25 +188,25 @@ class OzonConnector:
                                 timeout=self.request_params('/actions/candidates')[2]
                             ).json()['result']['products']
                             offset += limit
-                        flat_unit = dict()
-                        final_df = pd.DataFrame()
-                        for product in list_of_goods:
-                            flat_unit['id_action'] = action_id
-                            flat_unit['id_product'] = product['id']
-                            flat_unit['price'] = product['price']
-                            flat_unit['action_price'] = product['action_price']
-                            flat_unit['max_action_price'] = product['max_action_price']
-                            flat_unit['add_mode'] = product['add_mode']
-                            flat_unit['stock'] = product['stock']
-                            flat_unit['min_stock'] = product['min_stock']
-                            flat_unit['date_end'] = end_date
-                            flat_unit['client_id_api'] = self.id
-                            df_unit = pd.DataFrame(flat_unit, index=[0])
-                            final_df = pd.concat([df_unit, final_df])
-                            if len(final_df) > 10000:
-                                insert_data(final_df, sql_fields, connection, table_name)
-                                final_df = pd.DataFrame()
-                        insert_data(final_df, sql_fields, connection, table_name)
+                            flat_unit = dict()
+                            for product in list_of_goods:
+                                flat_unit['id_action'] = action_id
+                                flat_unit['id_product'] = product['id']
+                                flat_unit['price'] = product['price']
+                                flat_unit['action_price'] = product['action_price']
+                                flat_unit['max_action_price'] = product['max_action_price']
+                                flat_unit['add_mode'] = product['add_mode']
+                                flat_unit['stock'] = product['stock']
+                                flat_unit['min_stock'] = product['min_stock']
+                                flat_unit['date_end'] = end_date
+                                flat_unit['client_id_api'] = self.id
+                                df_unit = pd.DataFrame(flat_unit, index=[0])
+                                final_df = pd.concat([df_unit, final_df])
+                                if len(final_df) > 10000:
+                                    # insert_data(final_df, sql_fields, connection, table_name)
+                                    final_df = pd.DataFrame()
+                        # if len(final_df) != 0:
+                            # insert_data(final_df, sql_fields, connection, table_name)
                         relation_goods_to_action[action_id] = 'success'
 
                     elif resp.status_code in errors_dict.keys():
@@ -355,11 +358,10 @@ pprint(records)
 print('-' * 28 + '\n\n\n\n' + '-' * 28)
 
 for max_id, client_id_api, api_key in records:
+    print(f'client_id_api {client_id_api}\n')
     OC1 = OzonConnector(client_id_api, api_key)
-    pprint(OC1.goods_for_action_get(OC1.all_actions_get()[0], conn))
+    actions = OC1.all_actions_get()
+    if len(actions) == 0:
+        continue
+    print(len(OC1.goods_for_action_get(actions[0], conn)), client_id_api)
     print('-' * 28 + '\n\n\n' + '-' * 28)
-
-Client_Id = ''
-Api_Key = ''
-OC = OzonConnector(Client_Id, Api_Key)
-
