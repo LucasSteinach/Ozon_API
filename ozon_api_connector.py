@@ -73,12 +73,13 @@ def sql_connection(db_name, db_user, db_password, db_host, db_port, target_sessi
     return connection
 
 
-def insert_data(f_values_data, colum_data, connection, table_name):
+def insert_data(colum_data, f_values_data, connection, table_name):
     if f_values_data != '':
         insert_query = f"insert into {table_name} ({colum_data}) values {f_values_data}"
+        print(insert_query)
         pointer = connection.cursor()
         pointer.execute(insert_query)
-        conn.commit()
+        connection.commit()
         print(f"record in {table_name} created")
 
 
@@ -86,8 +87,21 @@ def delete_data():
     pass
 
 
-def join_data():
-    pass
+def join_data(super_order_data):
+    colum_data = ', '.join(super_order_data.columns.to_list())
+    vals = []
+    for index, r in super_order_data.iterrows():
+        row = []
+        for x in r:
+            row.append(f"'{str(x)}'")
+        row_str = ', '.join(row)
+        vals.append(row_str)
+    f_values_data = []
+    for v in vals:
+        f_values_data.append(f"({v})")
+    f_values_data = ', '.join(f_values_data)
+    return colum_data, f_values_data
+
 
 
 class OzonConnector:
@@ -102,7 +116,7 @@ class OzonConnector:
         return f'{self.http}{href_end}', {
             'Client-Id': self.id,
             'Api-Key': self.key,
-        }, 9
+        }, 30
 
     def all_actions_get(self):
         resp = None
@@ -139,6 +153,7 @@ class OzonConnector:
                 return f'Unknown status ({resp.status_code})'
 
     def goods_for_action_get(self, actions: dict, connection):
+        counter = 0
         relation_goods_to_action = dict()
         if actions is None:
             return 'Empty request'
@@ -172,8 +187,10 @@ class OzonConnector:
                     if resp.status_code == 200:
                         print(f'successful goods request (action {action_id})')
                         total_goods = resp.json()['result']['total']
-                        limit = 100
+                        print(f'total goods {total_goods}')
+                        limit = 10000
                         offset = 0
+                        counter += total_goods
                         list_of_goods = []
                         final_df = pd.DataFrame()
                         while offset < total_goods:
@@ -190,8 +207,8 @@ class OzonConnector:
                             offset += limit
                             flat_unit = dict()
                             for product in list_of_goods:
-                                flat_unit['id_action'] = action_id
                                 flat_unit['id_product'] = product['id']
+                                flat_unit['id_action'] = action_id
                                 flat_unit['price'] = product['price']
                                 flat_unit['action_price'] = product['action_price']
                                 flat_unit['max_action_price'] = product['max_action_price']
@@ -203,10 +220,10 @@ class OzonConnector:
                                 df_unit = pd.DataFrame(flat_unit, index=[0])
                                 final_df = pd.concat([df_unit, final_df])
                                 if len(final_df) > 10000:
-                                    # insert_data(final_df, sql_fields, connection, table_name)
+                                    insert_data(*join_data(final_df), connection, 'mark_actions')
                                     final_df = pd.DataFrame()
-                        # if len(final_df) != 0:
-                            # insert_data(final_df, sql_fields, connection, table_name)
+                        if len(final_df) != 0:
+                            insert_data(*join_data(final_df), connection, 'mark_actions')
                         relation_goods_to_action[action_id] = 'success'
 
                     elif resp.status_code in errors_dict.keys():
@@ -356,6 +373,7 @@ pointer.execute(sql_select_api_clients)
 records = pointer.fetchall()
 pprint(records)
 print('-' * 28 + '\n\n\n\n' + '-' * 28)
+
 
 for max_id, client_id_api, api_key in records:
     print(f'client_id_api {client_id_api}\n')
