@@ -17,21 +17,17 @@ errors_dict = {
 }
 
 sql_fields = [
-    'id_action',
-    'id_product',
-    'price',
-    'action_price',
-    'max_action_price',
-    'add_mode',
-    'stock',
-    'min_stock',
-    'date_end',
-    'client_id_api'
+    "id_product",
+    "id_action",
+    "price",
+    "action_price",
+    "max_action_price",
+    "add_mode",
+    "stock",
+    "min_stock",
+    "date_end",
+    "client_id_api"
 ]
-
-sql_insertion = f"""
-    INSERT INTO \\db\\({sql_fields})
-    VALUES """
 
 
 sql_my_auth_data = (
@@ -76,15 +72,20 @@ def sql_connection(db_name, db_user, db_password, db_host, db_port, target_sessi
 def insert_data(colum_data, f_values_data, connection, table_name):
     if f_values_data != '':
         insert_query = f"insert into {table_name} ({colum_data}) values {f_values_data}"
-        print(insert_query)
         pointer = connection.cursor()
         pointer.execute(insert_query)
         connection.commit()
         print(f"record in {table_name} created")
 
 
-def delete_data():
-    pass
+def delete_data(connection, partition='uniq_key', table_name='mark_actions'):
+    delete_query = f"""DELETE FROM mark_actions WHERE id IN (SELECT id FROM (SELECT *, row_number() 
+    OVER (PARTITION BY concat(id_product, '---', id_action, '---', client_id_api) ORDER BY id DESC) as uniq_key 
+    FROM mark_actions) as id_table WHERE uniq_key >= 2)"""
+    point = connection.cursor()
+    point.execute(delete_query)
+    connection.commit()
+    print(f"doubles {table_name} deleted")
 
 
 def join_data(super_order_data):
@@ -101,7 +102,6 @@ def join_data(super_order_data):
         f_values_data.append(f"({v})")
     f_values_data = ', '.join(f_values_data)
     return colum_data, f_values_data
-
 
 
 class OzonConnector:
@@ -153,7 +153,6 @@ class OzonConnector:
                 return f'Unknown status ({resp.status_code})'
 
     def goods_for_action_get(self, actions: dict, connection):
-        counter = 0
         relation_goods_to_action = dict()
         if actions is None:
             return 'Empty request'
@@ -186,12 +185,10 @@ class OzonConnector:
                 else:
                     if resp.status_code == 200:
                         print(f'successful goods request (action {action_id})')
+                        relation_goods_to_action[action_id] = 0
                         total_goods = resp.json()['result']['total']
-                        print(f'total goods {total_goods}')
                         limit = 10000
                         offset = 0
-                        counter += total_goods
-                        list_of_goods = []
                         final_df = pd.DataFrame()
                         while offset < total_goods:
                             list_of_goods = requests.post(
@@ -209,9 +206,9 @@ class OzonConnector:
                             for product in list_of_goods:
                                 flat_unit['id_product'] = product['id']
                                 flat_unit['id_action'] = action_id
-                                flat_unit['price'] = product['price']
-                                flat_unit['action_price'] = product['action_price']
-                                flat_unit['max_action_price'] = product['max_action_price']
+                                flat_unit['price'] = round(float(product['price']), 2)
+                                flat_unit['action_price'] = round(float(product['action_price']), 2)
+                                flat_unit['max_action_price'] = round(float(product['max_action_price']), 2)
                                 flat_unit['add_mode'] = product['add_mode']
                                 flat_unit['stock'] = product['stock']
                                 flat_unit['min_stock'] = product['min_stock']
@@ -221,16 +218,21 @@ class OzonConnector:
                                 final_df = pd.concat([df_unit, final_df])
                                 if len(final_df) > 10000:
                                     insert_data(*join_data(final_df), connection, 'mark_actions')
+                                    relation_goods_to_action[action_id] += len(final_df)
                                     final_df = pd.DataFrame()
                         if len(final_df) != 0:
                             insert_data(*join_data(final_df), connection, 'mark_actions')
-                        relation_goods_to_action[action_id] = 'success'
+                        relation_goods_to_action[action_id] += len(final_df)
+                        print('success')
 
                     elif resp.status_code in errors_dict.keys():
-                        relation_goods_to_action[action_id] = errors_dict[resp.status_code]
+                        relation_goods_to_action[action_id] = 0
+                        print(errors_dict[resp.status_code])
 
                     else:
-                        relation_goods_to_action[action_id] = f'Unknown status ({resp.status_code})'
+                        relation_goods_to_action[action_id] = 0
+                        print(f'Unknown status ({resp.status_code})')
+            print('')
             return relation_goods_to_action
 
 
@@ -374,12 +376,13 @@ records = pointer.fetchall()
 pprint(records)
 print('-' * 28 + '\n\n\n\n' + '-' * 28)
 
-
+counter = 0
 for max_id, client_id_api, api_key in records:
     print(f'client_id_api {client_id_api}\n')
     OC1 = OzonConnector(client_id_api, api_key)
     actions = OC1.all_actions_get()
     if len(actions) == 0:
         continue
-    print(len(OC1.goods_for_action_get(actions[0], conn)), client_id_api)
-    print('-' * 28 + '\n\n\n' + '-' * 28)
+    counter += sum(list(OC1.goods_for_action_get(actions[0], conn).values()))
+print(f'Total {counter} records in mark_actions were created')
+delete_data(conn)
