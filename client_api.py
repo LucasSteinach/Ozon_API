@@ -1,4 +1,5 @@
 from flask import Flask, request
+from pprint import pprint
 from flask_restful import Api, Resource, reqparse
 app = Flask(__name__)
 api = Api(app)
@@ -14,10 +15,15 @@ class MarkActionsAPI(Resource):
         self.conn = connection
 
     def get(self, client_id):
+        api.add_resource(MarkActionsAPI, '/mark_actions_api/<string:client_id>')
         cursor = self.conn.cursor().execute("SELECT * FROM mark_actions WHERE client_id_api = '" + client_id +"'")
+        print("SELECT * FROM mark_actions WHERE client_id_api = '" + client_id +"'")
+        # records = cursor.fetchall()
+        # pprint(records)
         return cursor
 
-api.add_resource(MarkActionsAPI, '/mark_actions_api/<string:client_id>')
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)

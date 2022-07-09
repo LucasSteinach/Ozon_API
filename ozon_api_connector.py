@@ -8,6 +8,10 @@ import pandas as pd
 
 import time
 
+from client_api import MarkActionsAPI
+
+BASE = "http://127.0.0.1:5000/"
+
 errors_dict = {
     400: "Bad request (probably atribute json)",
     401: "Authorization failed (probably incorrect user id)",
@@ -15,20 +19,6 @@ errors_dict = {
     405: "Method not allowed",
     429: "Too many requests"
 }
-
-sql_fields = [
-    "id_product",
-    "id_action",
-    "price",
-    "action_price",
-    "max_action_price",
-    "add_mode",
-    "stock",
-    "min_stock",
-    "date_end",
-    "client_id_api"
-]
-
 
 sql_my_auth_data = (
     # db_name: str,
@@ -235,8 +225,8 @@ class OzonConnector:
             print('')
             return relation_goods_to_action
 
-
     # creates dict {id_action: list_of_products related to this action}
+
     def active_products(self, action_id):
         result = dict()
         if type(action_id) is not int:
@@ -254,7 +244,7 @@ class OzonConnector:
                             'limit': 1,
                             'offset': 0
                         },
-                        timeout=self.request_params('/actions/candidates')[2]
+                        timeout=self.request_params('/actions/products')[2]
                     )
                 except requests.Timeout:
                     print(f'Attempt #{attempt_count} failed. Next attempt in 4 seconds')
@@ -281,7 +271,7 @@ class OzonConnector:
                                 'limit': limit,
                                 'offset': offset
                             },
-                            timeout=self.request_params('/actions/candidates')[2]
+                            timeout=self.request_params('/actions/products')[2]
                         ).json()['result']['products']
                         offset += limit
                     result = {action_id: list_of_products}
@@ -376,13 +366,16 @@ records = pointer.fetchall()
 pprint(records)
 print('-' * 28 + '\n\n\n\n' + '-' * 28)
 
-counter = 0
-for max_id, client_id_api, api_key in records:
-    print(f'client_id_api {client_id_api}\n')
-    OC1 = OzonConnector(client_id_api, api_key)
-    actions = OC1.all_actions_get()
-    if len(actions) == 0:
-        continue
-    counter += sum(list(OC1.goods_for_action_get(actions[0], conn).values()))
-print(f'Total {counter} records in mark_actions were created')
-delete_data(conn)
+# counter = 0
+# for max_id, client_id_api, api_key in records:
+#     print(f'client_id_api {client_id_api}\n')
+#     OC1 = OzonConnector(client_id_api, api_key)
+#     actions = OC1.all_actions_get()
+#     if len(actions) == 0:
+#         continue
+#     counter += sum(list(OC1.goods_for_action_get(actions[0], conn).values()))
+# print(f'Total {counter} records in mark_actions were created')
+# delete_data(conn)
+
+local_connector = MarkActionsAPI(conn)
+pprint(local_connector.get("2663"))
