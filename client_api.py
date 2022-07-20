@@ -1,41 +1,27 @@
-from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
+import json.decoder
+
+from flask import Flask, request
 from pprint import pprint
 from ozon_api_connector import sql_connection, sql_my_auth_data
-import psycopg2
+import psycopg2.extras
 from flask_restful import Api, Resource, reqparse
 
 app = Flask(__name__)
 api = Api(app)
-db = SQLAlchemy(app)
 
-
-class ProductsModel(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    id_product = db.Column(db.String(40), nullable=False)
-    id_action = db.Column(db.Integer)
-    price = db.Column(db.Float)
-    action_price = db.Column(db.Float)
-    max_action_price = db.Column(db.Float)
-    add_mode = db.Column(db.String(20))
-    stock = db.Column(db.Integer)
-    min_stock = db.Column(db.Integer)
-    date_end = db.Column(db.DateTime)
-    client_api_id = db.Column(db.String(40), nullable=False)
-
-
-db.create_all()
 
 get_args = reqparse.RequestParser()
 get_args.add_argument(name='client_id_api', type=str, help='correct client_id_api is required', required=True)
 
+post_args = reqparse.RequestParser()
+post_args.add_argument(name='client_id_api', type=str, help='correct client_id_api is required', required=True)
+post_args.add_argument(name='rule', type=dict, help='Type of rule must be "dict"', required=True)
 
 class MarkActionsAPI(Resource):
 
     # returns available to action products for client_id ordered descending by % discount
     def get(self):
         args = get_args.parse_args()
-        print(args)
         with sql_connection(*sql_my_auth_data) as connect:
             pointer = connect.cursor()
             pointer.execute(f"""SELECT id_action, id_product, ROUND((1-max_action_price/price)*100) AS discount FROM 
@@ -58,6 +44,19 @@ class MarkActionsAPI(Resource):
 
     # stores rules in db
     def post(self):
+        args = post_args.parse_args()
+        with sql_connection(*sql_my_auth_data) as connect:
+            pointer = connect.cursor()
+            pointer.execute(f"""CREATE TABLE IF NOT EXISTS rules (
+                id SERIAL PRIMARY KEY,
+                client_id_api VARCHAR(40) NOT NULL,
+                rule jsonb
+            )""")
+            pointer.execute(f"""INSERT INTO rules (client_id_api, rule) 
+                VALUES ({args['client_id_api']},
+                {args['rule']}
+            )""")
+
         return
 
     # deletes good from action
