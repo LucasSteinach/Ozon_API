@@ -1,26 +1,18 @@
-import json.decoder
-
-from flask import Flask, request
-from pprint import pprint
+from flask import Flask
 from ozon_api_connector import sql_connection, sql_my_auth_data
-import psycopg2.extras
 from flask_restful import Api, Resource, reqparse
 
 app = Flask(__name__)
 api = Api(app)
 
 
-get_args = reqparse.RequestParser()
-get_args.add_argument(name='client_id_api', type=str, help='correct client_id_api is required', required=True)
-
-post_args = reqparse.RequestParser()
-post_args.add_argument(name='client_id_api', type=str, help='correct client_id_api is required', required=True)
-post_args.add_argument(name='rule', type=dict, help='Type of rule must be "dict"', required=True)
-
 class MarkActionsAPI(Resource):
 
     # returns available to action products for client_id ordered descending by % discount
-    def get(self):
+    @staticmethod
+    def get():
+        get_args = reqparse.RequestParser()
+        get_args.add_argument(name='client_id_api', type=str, help='correct client_id_api is required', required=True)
         args = get_args.parse_args()
         with sql_connection(*sql_my_auth_data) as connect:
             pointer = connect.cursor()
@@ -36,32 +28,52 @@ class MarkActionsAPI(Resource):
                 })
         return result
 
-    # adds goods to action
-    def put(self):
-        req_data = get_args.parse_args()
-        print(req_data)
-        return '', 201
-
     # stores rules in db
-    def post(self):
-        args = post_args.parse_args()
+    @staticmethod
+    def put():
+        put_args = reqparse.RequestParser()
+        put_args.add_argument(name='api_id', type=str, help='correct api_id is required', required=True)
+        put_args.add_argument(name='client_id', type=int, help='correct client_id is required', required=True)
+        put_args.add_argument(name='rule', type=str, help='Type of rule must be str', required=True)
+        args = put_args.parse_args()
+        args['rule'] = args['rule'].replace("'", '"')
         with sql_connection(*sql_my_auth_data) as connect:
             pointer = connect.cursor()
-            pointer.execute(f"""CREATE TABLE IF NOT EXISTS rules (
-                id SERIAL PRIMARY KEY,
-                client_id_api VARCHAR(40) NOT NULL,
-                rule jsonb
-            )""")
-            pointer.execute(f"""INSERT INTO rules (client_id_api, rule) 
-                VALUES ({args['client_id_api']},
-                {args['rule']}
-            )""")
+            pointer.execute("SELECT COUNT(*) from mark_actions_rules_table")
+            records_count = pointer.fetchall()[0][0] + 1
+            pointer.execute(f"""INSERT INTO mark_actions_rules_table (id, api_id, client_id, rule)
+                        VALUES ({records_count},
+                        '{args['api_id']}',
+                        {args['client_id']},
+                        '{(args['rule'])}')
+            """)
+            pointer.execute("SELECT COUNT(*) from mark_actions_rules_table")
+            res = pointer.fetchall()[0][0]
+        return f"New rule added, total {res} rule(s)", 201
 
-        return
-
-    # deletes good from action
-    def delete(self):
-        return
+    # get rules from db
+    @staticmethod
+    def post():
+        post_args = reqparse.RequestParser()
+        post_args.add_argument(name='api_id', type=str, help='correct client_id_api is required', required=True)
+        post_args.add_argument(name='client_id', type=int, help='Type of rule must be "dict"', required=True)
+        req_data = post_args.parse_args()
+        with sql_connection(*sql_my_auth_data) as connect:
+            cursor = connect.cursor()
+            cursor.execute(f"""SELECT * FROM mark_actions_rules_table WHERE 
+            api_id = '{req_data['api_id']}' AND client_id = {req_data['client_id']}""")
+            res = {"rules": []}
+            while True:
+                record = cursor.fetchone()
+                if not record:
+                    break
+                res["rules"].append({
+                    'rule_id': record[0],
+                    'api_id': record[1],
+                    'rule_description': record[2],
+                    'client_id': record[3]
+                })
+        return res, 200
 
 
 api.add_resource(MarkActionsAPI, '/mark_actions_api')
