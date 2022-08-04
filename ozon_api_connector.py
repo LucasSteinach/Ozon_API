@@ -1,22 +1,17 @@
 from pprint import pprint
-
 import psycopg2 as psy
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
-
 import pandas as pd
 
 import time
-
-from client_api import MarkActionsAPI
-
-BASE = "http://127.0.0.1:5000/"
 
 errors_dict = {
     400: "Bad request (probably atribute json)",
     401: "Authorization failed (probably incorrect user id)",
     403: "Forbidden (probably incorrect access-key)",
-    405: "Method not allowed",
+    405: "Method is not allowed",
     429: "Too many requests"
 }
 
@@ -31,7 +26,7 @@ sql_my_auth_data = (
 )
 
 sql_select_api_clients = """
-    SELECT MAX(id), client_id_api, tmp.api_key
+    SELECT client_id_api, tmp.api_key
     FROM (SELECT DISTINCT(api_key) from account_list) as tmp
     JOIN account_list
     ON tmp.api_key = account_list.api_key
@@ -65,13 +60,12 @@ def insert_data(colum_data, f_values_data, connection, table_name):
         pointer = connection.cursor()
         pointer.execute(insert_query)
         connection.commit()
-        print(f"record in {table_name} created")
+        # print(f"record in {table_name} created")
 
 
-def delete_data(connection, partition='uniq_key', table_name='mark_actions'):
-    delete_query = f"""DELETE FROM mark_actions WHERE id IN (SELECT id FROM (SELECT *, row_number() 
-    OVER (PARTITION BY concat(id_product, '---', id_action, '---', client_id_api) ORDER BY id DESC) as uniq_key 
-    FROM mark_actions) as id_table WHERE uniq_key >= 2)"""
+def delete_data(connection, table_name='mark_actions'):
+    delete_query = f"""DELETE FROM mark_actions WHERE ctid IN (SELECT ctid FROM (SELECT *, ctid, row_number()
+        OVER (PARTITION BY id_product, id_action, client_id_api ORDER BY id DESC) FROM mark_actions)s WHERE row_number >= 2)"""
     point = connection.cursor()
     point.execute(delete_query)
     connection.commit()
@@ -132,10 +126,10 @@ class OzonConnector:
             return dict_of_ids, resp.status_code
         else:
             if resp.status_code == 200:
-                print('successful actions request')
+                # print('successful actions request')
                 for action in resp.json()['result']:
                     dict_of_ids[action['id']] = action['date_end']
-                print(len(dict_of_ids))
+                # print(len(dict_of_ids))
                 return dict_of_ids, resp.json()['result']
             elif resp.status_code in errors_dict.keys():
                 return errors_dict[resp.status_code]
@@ -174,7 +168,7 @@ class OzonConnector:
                     relation_goods_to_action[action_id] = 'NOT RESPONSE (Timeout or 429)'
                 else:
                     if resp.status_code == 200:
-                        print(f'successful goods request (action {action_id})')
+                        # print(f'successful goods request (action {action_id})')
                         relation_goods_to_action[action_id] = 0
                         total_goods = resp.json()['result']['total']
                         limit = 10000
@@ -213,7 +207,7 @@ class OzonConnector:
                         if len(final_df) != 0:
                             insert_data(*join_data(final_df), connection, 'mark_actions')
                         relation_goods_to_action[action_id] += len(final_df)
-                        print('success')
+                        # print('success')
 
                     elif resp.status_code in errors_dict.keys():
                         relation_goods_to_action[action_id] = 0
@@ -222,11 +216,10 @@ class OzonConnector:
                     else:
                         relation_goods_to_action[action_id] = 0
                         print(f'Unknown status ({resp.status_code})')
-            print('')
+            # print('')
             return relation_goods_to_action
 
     # creates dict {id_action: list_of_products related to this action}
-
     def active_products(self, action_id):
         result = dict()
         if type(action_id) is not int:
@@ -359,23 +352,22 @@ class OzonConnector:
         return resp.json()
 
 
-conn = sql_connection(*sql_my_auth_data)
-pointer = conn.cursor()
-pointer.execute(sql_select_api_clients)
-records = pointer.fetchall()
-pprint(records)
-print('-' * 28 + '\n\n\n\n' + '-' * 28)
+if __name__ == '__main__':
+    conn = sql_connection(*sql_my_auth_data)
+    pointer = conn.cursor()
+    pointer.execute(sql_select_api_clients)
+    records = pointer.fetchall()
+    pprint(records)
+    print('-' * 28 + '\n\n\n\n' + '-' * 28)
 
-# counter = 0
-# for max_id, client_id_api, api_key in records:
-#     print(f'client_id_api {client_id_api}\n')
-#     OC1 = OzonConnector(client_id_api, api_key)
-#     actions = OC1.all_actions_get()
-#     if len(actions) == 0:
-#         continue
-#     counter += sum(list(OC1.goods_for_action_get(actions[0], conn).values()))
-# print(f'Total {counter} records in mark_actions were created')
-# delete_data(conn)
+    counter = 0
 
-local_connector = MarkActionsAPI(conn)
-pprint(local_connector.get("2663"))
+    for client_id_api, api_key in records:
+            OC1 = OzonConnector(client_id_api, api_key)
+            actions = OC1.all_actions_get()
+            if len(actions) == 0:
+                continue
+            list_actions_products = OC1.goods_for_action_get(actions[0], conn)
+            counter += sum(list(list_actions_products.values()))
+    delete_data(conn)
+
