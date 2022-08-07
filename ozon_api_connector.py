@@ -3,7 +3,6 @@ import psycopg2 as psy
 from threading import Thread
 import requests
 import pandas as pd
-import time
 
 import time
 
@@ -15,8 +14,7 @@ errors_dict = {
     429: "Too many requests"
 }
 
-sql_my_auth_data = (
-    # db_name: str,
+sql_my_auth_data = (  # db_name: str,
     # db_user: str,
     # db_password: str,
     # db_host: str,
@@ -57,15 +55,16 @@ def sql_connection(db_name, db_user, db_password, db_host, db_port, target_sessi
 def insert_data(colum_data, f_values_data, connection, table_name):
     if f_values_data != '':
         insert_query = f"insert into {table_name} ({colum_data}) values {f_values_data}"
-        pointer = connection.cursor()
-        pointer.execute(insert_query)
+        point = connection.cursor()
+        point.execute(insert_query)
         connection.commit()
         # print(f"record in {table_name} created")
 
 
 def delete_data(connection, table_name='mark_actions'):
     delete_query = f"""DELETE FROM mark_actions WHERE ctid IN (SELECT ctid FROM (SELECT *, ctid, row_number()
-        OVER (PARTITION BY id_product, id_action, client_id_api ORDER BY id DESC) FROM mark_actions)s WHERE row_number >= 2)"""
+        OVER (PARTITION BY id_product, id_action, client_id_api ORDER BY id DESC) 
+        FROM mark_actions)s WHERE row_number >= 2)"""
     point = connection.cursor()
     point.execute(delete_query)
     connection.commit()
@@ -114,10 +113,12 @@ class OzonConnector:
                 )
 
             except requests.Timeout:
-                print(f'Attempt #{attempt_count} failed(Timeout). Next attempt in {self.request_params("/actions")[2]} seconds')
+                print(f"""Attempt #{attempt_count} failed(Timeout). 
+                Next attempt in {self.request_params("/actions")[2]} seconds""")
                 time.sleep(self.request_params('/actions')[2] * attempt_count)
             except requests.codes == 429:
-                print(f'Attempt #{attempt_count} failed(429). Next attempt in {self.request_params("/actions")[2]} seconds')
+                print(f"""Attempt #{attempt_count} failed(429). 
+                Next attempt in {self.request_params("/actions")[2]} seconds""")
                 time.sleep(self.request_params('/actions')[2] * attempt_count)
             attempt_count += 1
 
@@ -157,10 +158,12 @@ class OzonConnector:
                             timeout=self.request_params('/actions/candidates')[2]
                         )
                     except requests.Timeout:
-                        print(f'Attempt #{attempt_count} failed(Timeout). Next attempt in {self.request_params("/actions/candidates")[2]} seconds')
+                        print(f"""Attempt #{attempt_count} failed(Timeout). 
+                        Next attempt in {self.request_params("/actions/candidates")[2]} seconds""")
                         time.sleep(self.request_params('/actions/candidates')[2] * attempt_count)
                     except requests.codes == 429:
-                        print(f'Attempt #{attempt_count} failed(429). Next attempt in {self.request_params("/actions/candidates")[2]} seconds')
+                        print(f"""Attempt #{attempt_count} failed(429). 
+                        Next attempt in {self.request_params("/actions/candidates")[2]} seconds""")
                         time.sleep(self.request_params('/actions/candidates')[2] * attempt_count)
                     attempt_count += 1
 
@@ -355,12 +358,12 @@ class OzonConnector:
 def daily_uploading_to_db(cli_id_api, api_ke, connection):
     # print(f'#{count} process started')
     # start = time.time()
-    OzCon = OzonConnector(cli_id_api, api_ke)
-    actions_ = OzCon.all_actions_get()
+    oz_con = OzonConnector(cli_id_api, api_ke)
+    actions_ = oz_con.all_actions_get()
     if len(actions_) == 0:
         print('No available actions')
         return
-    OzCon.goods_for_action_get(actions_[0], connection)
+    oz_con.goods_for_action_get(actions_[0], connection)
     # end = time.time()
     # print(f'#{count} process finished, duration ={end - start}')
     return 'Done'
@@ -374,9 +377,7 @@ if __name__ == '__main__':
     pprint(records)
 
     list_of_threads = []
-    # counter = 0
     for client_id_api, api_key in records:
-        # counter += 1
         th = Thread(target=daily_uploading_to_db, args=(client_id_api, api_key, conn))
         list_of_threads.append(th)
         th.start()
@@ -384,4 +385,3 @@ if __name__ == '__main__':
     for thread in list_of_threads:
         thread.join()
     delete_data(conn)
-

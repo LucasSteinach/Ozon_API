@@ -1,7 +1,7 @@
 import requests
 from pprint import pprint
-from ozon_api_connector import OzonConnector, join_data, delete_data, insert_data, sql_connection, sql_my_auth_data, \
-    errors_dict, sql_select_api_clients
+from ozon_api_connector import OzonConnector, sql_connection, sql_my_auth_data, sql_select_api_clients
+from threading import Thread
 
 BASE = "http://127.0.0.1:5000/"
 
@@ -29,8 +29,20 @@ class RuleHandler:
         return res
 
 
-def rule_execute(rule, ):
-    pass
+def rule_execute(ap_id, ap_ke, cli_id=2):
+    rules_list = requests.post(BASE + "mark_actions_api", params={"api_id": ap_id,
+                                                                  "client_id": cli_id}).json()['rules']
+    if len(rules_list) == 0:
+        return 'No rules to handle'
+    oz_con = OzonConnector(ap_id, ap_ke)
+    for rule_ in rules_list:
+        rule_handler = RuleHandler(rule_)
+        products_to_add = rule_handler.get_available_products()
+
+        if len(products_to_add) == 0:
+            continue
+        for action_id, products in products_to_add.items():
+            oz_con.goods_to_action_add(action_id, products)
 
 
 if __name__ == "__main__":
@@ -40,32 +52,12 @@ if __name__ == "__main__":
     records = pointer.fetchall()
     pprint(records)
 
-    # rules = requests.post(BASE + "mark_actions_api", params={"api_id": '2663', "client_id": 2}).json()['rules']
-    # # pprint(rules)
-    # RH = RuleHandler(rules[0])
-    # pprint(RH.get_available_products())
+    list_of_threads = []
 
     for api_id, api_key in records:
-        rules = requests.post(BASE + "mark_actions_api", params={"api_id": api_id, "client_id": 2}).json()['rules']
-        # pprint(rules)
-        if len(rules) == 0:
-            continue
-        OzCon = OzonConnector(api_id, api_key)
-        for rule in rules:
-            RulHand = RuleHandler(rule)
-            products_to_add = RulHand.get_available_products()
-            # pprint(products_to_add)
-            # print(list(products_to_add.keys()))
-            if len(products_to_add) == 0:
-                continue
-            for action_id, products in products_to_add.items():
-                # print(len(products))
-                # print(f'action {action_id}. products adding')
-                pprint(OzCon.goods_to_action_add(action_id, products))
-                # print(f'action {action_id} addition finished.\n\n')
-                # pprint(OzCon.active_products(action_id))
-                # print(f'active products for action {action_id}\n\n')
+        th = Thread(target=rule_execute, args=(api_id, api_key))
+        list_of_threads.append(th)
+        th.start()
 
-
-
-
+    for thread in list_of_threads:
+        thread.join()
