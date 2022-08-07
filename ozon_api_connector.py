@@ -1,9 +1,9 @@
 from pprint import pprint
 import psycopg2 as psy
-from concurrent.futures import ThreadPoolExecutor
-
+from threading import Thread
 import requests
 import pandas as pd
+import time
 
 import time
 
@@ -352,22 +352,36 @@ class OzonConnector:
         return resp.json()
 
 
+def daily_uploading_to_db(cli_id_api, api_ke, connection):
+    # print(f'#{count} process started')
+    # start = time.time()
+    OzCon = OzonConnector(cli_id_api, api_ke)
+    actions_ = OzCon.all_actions_get()
+    if len(actions_) == 0:
+        print('No available actions')
+        return
+    OzCon.goods_for_action_get(actions_[0], connection)
+    # end = time.time()
+    # print(f'#{count} process finished, duration ={end - start}')
+    return 'Done'
+
+
 if __name__ == '__main__':
     conn = sql_connection(*sql_my_auth_data)
     pointer = conn.cursor()
     pointer.execute(sql_select_api_clients)
     records = pointer.fetchall()
     pprint(records)
-    print('-' * 28 + '\n\n\n\n' + '-' * 28)
 
-    counter = 0
-
+    list_of_threads = []
+    # counter = 0
     for client_id_api, api_key in records:
-            OC1 = OzonConnector(client_id_api, api_key)
-            actions = OC1.all_actions_get()
-            if len(actions) == 0:
-                continue
-            list_actions_products = OC1.goods_for_action_get(actions[0], conn)
-            counter += sum(list(list_actions_products.values()))
+        # counter += 1
+        th = Thread(target=daily_uploading_to_db, args=(client_id_api, api_key, conn))
+        list_of_threads.append(th)
+        th.start()
+
+    for thread in list_of_threads:
+        thread.join()
     delete_data(conn)
 
