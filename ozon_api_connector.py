@@ -3,6 +3,8 @@ import psycopg2 as psy
 from threading import Thread
 import requests
 import pandas as pd
+from dotenv import load_dotenv, find_dotenv
+import os
 
 import time
 
@@ -14,14 +16,6 @@ errors_dict = {
     429: "Too many requests"
 }
 
-sql_my_auth_data = (  # db_name: str,
-    # db_user: str,
-    # db_password: str,
-    # db_host: str,
-    # db_port: str,
-    # target_session_attrs: str,
-    # sslmode: str
-)
 
 sql_select_api_clients = """
     SELECT client_id_api, tmp.api_key
@@ -370,6 +364,9 @@ def daily_uploading_to_db(cli_id_api, api_ke, connection):
 
 
 if __name__ == '__main__':
+    load_dotenv(find_dotenv())
+    sql_my_auth_data = tuple(os.getenv('sql_my_auth_data').split(','))
+
     conn = sql_connection(*sql_my_auth_data)
     pointer = conn.cursor()
     pointer.execute(sql_select_api_clients)
