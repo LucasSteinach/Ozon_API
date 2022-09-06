@@ -5,6 +5,15 @@ from threading import Thread
 
 BASE = "http://127.0.0.1:5000/"
 
+# sql_my_auth_data = (
+# db_name: str,
+# db_user: str,
+# db_password: str,
+# db_host: str,
+# db_port: str,
+# target_session_attrs: str,
+# sslmode: str
+# )
 
 class RuleHandler:
     def __init__(self, rule: dict):
@@ -27,6 +36,10 @@ class RuleHandler:
             else:
                 res[product['id_action']].append(product)
         return res
+
+
+    def store_rule(self):
+        pass
 
 
 def rule_execute(ap_id, ap_ke, cli_id=2):

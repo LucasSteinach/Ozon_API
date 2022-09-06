@@ -6,38 +6,17 @@ app = Flask(__name__)
 api = Api(app)
 
 
-class MarkActionsAPI(Resource):
+# sql_my_auth_data = (
+# db_name: str,
+# db_user: str,
+# db_password: str,
+# db_host: str,
+# db_port: str,
+# target_session_attrs: str,
+# sslmode: str
+# )
 
-    # returns available to action products for client_id ordered descending by % discount
-    @staticmethod
-    def get():
-        get_args = reqparse.RequestParser()
-        get_args.add_argument(name='api_id', type=str, help='correct api_id is required', required=True)
-        get_args.add_argument(name='discount', type=str, help='Correct discount is required', required=True)
-        args = get_args.parse_args()
-        with sql_connection(*sql_my_auth_data) as connect:
-            pointer = connect.cursor()
-            pointer.execute(f"""SELECT id, id_product, id_action, price, action_price, max_action_price, add_mode, 
-            stock, min_stock, date_end::text, client_id_api, ROUND((1-max_action_price/price)*100) AS discount FROM 
-            mark_actions WHERE client_id_api = '{args['api_id']}' AND action_price = 0 AND 
-            ROUND((1-max_action_price/price)*100) <= {args['discount']} ORDER BY discount DESC """)
-            records = pointer.fetchall()
-            result = {'data': []}
-            for product in records:
-                result['data'].append({
-                    'id': product[1],
-                    'id_action': product[2],
-                    'price': product[3],
-                    'action_price': product[4],
-                    'max_action_price': product[5],
-                    'add_mode': product[6],
-                    'stock': product[7],
-                    'min_stock': product[8],
-                    'date_end': product[9],
-                    'client_id_api': product[10],
-                    'discount': product[11]
-                })
-        return result
+class MarkActionsAPI(Resource):
 
     # stores rules in db
     @staticmethod
@@ -87,8 +66,41 @@ class MarkActionsAPI(Resource):
         return res, 200
 
 
-api.add_resource(MarkActionsAPI, '/mark_actions_api')
+class MarkActionsAPIProducts(Resource):
+    # returns available to action products for client_id ordered descending by % discount
+    @staticmethod
+    def post():
+        post_args = reqparse.RequestParser()
+        post_args.add_argument(name='api_id', type=str, help='correct api_id is required', required=True)
+        post_args.add_argument(name='discount', type=str, help='Correct discount is required', required=True)
+        args = post_args.parse_args()
+        with sql_connection(*sql_my_auth_data) as connect:
+            pointer = connect.cursor()
+            pointer.execute(f"""SELECT id, id_product, id_action, price, action_price, max_action_price, add_mode, 
+                stock, min_stock, date_end::text, client_id_api, ROUND((1-max_action_price/price)*100) AS discount FROM 
+                mark_actions WHERE client_id_api = '{args['api_id']}' AND action_price = 0 AND 
+                ROUND((1-max_action_price/price)*100) <= {args['discount']} ORDER BY discount DESC """)
+            records = pointer.fetchall()
+            result = {'data': []}
+            for product in records:
+                result['data'].append({
+                    'id': product[1],
+                    'id_action': product[2],
+                    'price': product[3],
+                    'action_price': product[4],
+                    'max_action_price': product[5],
+                    'add_mode': product[6],
+                    'stock': product[7],
+                    'min_stock': product[8],
+                    'date_end': product[9],
+                    'client_id_api': product[10],
+                    'discount': product[11]
+                })
+        return result
 
+
+api.add_resource(MarkActionsAPI, '/mark_actions_api')
+api.add_resource(MarkActionsAPIProducts, '/mark_actions_api/available_products')
 
 if __name__ == '__main__':
     app.run(debug=True)

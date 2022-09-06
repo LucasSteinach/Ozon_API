@@ -16,6 +16,19 @@ errors_dict = {
     429: "Too many requests"
 }
 
+# Tables to handle with:
+# account_list, mark_actions, mark_actions_rules_table
+
+# Data should be added into sql_connection
+# sql_my_auth_data = (
+# db_name: str,
+# db_user: str,
+# db_password: str,
+# db_host: str,
+# db_port: str,
+# target_session_attrs: str,
+# sslmode: str
+# )
 
 sql_select_api_clients = """
     SELECT client_id_api, tmp.api_key
@@ -367,6 +380,7 @@ if __name__ == '__main__':
     load_dotenv(find_dotenv())
     sql_my_auth_data = tuple(os.getenv('sql_my_auth_data').split(','))
 
+    #
     conn = sql_connection(*sql_my_auth_data)
     pointer = conn.cursor()
     pointer.execute(sql_select_api_clients)
